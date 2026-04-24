@@ -10,34 +10,63 @@ A distributed job processing system built with Go. Submit a URL via the web UI o
 
 ---
 
+## ✨ Features
+
+- **Concurrent worker pool**  
+  Configurable goroutine count via environment variable.
+
+- **Exponential backoff retry**  
+  Retries failed jobs up to 3 times before marking them as `FAILED`.
+
+- **Graceful shutdown**  
+  Handles `SIGTERM` cleanly and drains in-flight jobs before exit.
+
+- **Prometheus metrics**  
+  Tracks job counts, processing duration, and queue size.
+
+- **Web UI**  
+  Live polling dashboard with pipeline step visualization.
+
+- **Docker Compose deployment**  
+  Full stack runs with a single command.
+
+---
+
 ## How It Works
-POST /api/jobs
-│
-▼
-PostgreSQL (QUEUED)
-│
-▼
-Redis Queue (LPUSH)
-│
-▼
-Worker Pool — 5 goroutines (BRPOP)
-│
-├── fetch URL
-├── count words
-└── PostgreSQL (COMPLETED / FAILED)
 
-## Features
+```text
+Client
+  │
+  ├── POST /api/jobs
+  │
+  ▼
+PostgreSQL
+  │
+  ├── job inserted as QUEUED
+  │
+  ▼
+Redis Queue
+  │
+  ├── job ID enqueued via LPUSH
+  │
+  ▼
+Worker Pool (5 goroutines by default)
+  │
+  ├── BRPOP job ID
+  ├── fetch URL
+  ├── count words
+  └── update PostgreSQL as COMPLETED or FAILED
+````
 
-- **Concurrent worker pool** — configurable goroutine count via env var
-- **Exponential backoff retry** — up to 3 attempts before marking FAILED
-- **Graceful shutdown** — SIGTERM drains in-flight jobs cleanly
-- **Prometheus metrics** — job count, duration histogram, queue size
-- **Web UI** — live polling dashboard with pipeline step visualization
-- **Docker Compose** — full stack in one command
+## 🚀 Quick Start
 
-## Quick Start
+### Prerequisites
 
-### Local (requires Go 1.23, PostgreSQL, Redis)
+* Go 1.23+
+* PostgreSQL
+* Redis
+
+### Local Development
 
 ```bash
 git clone https://github.com/ulasdursun/queueforge.git
@@ -46,7 +75,11 @@ cp .env.example .env
 go run ./cmd/server
 ```
 
-Open `http://localhost:8080`
+Open:
+
+```text
+http://localhost:8080
+```
 
 ### Docker
 
@@ -54,25 +87,19 @@ Open `http://localhost:8080`
 docker-compose up --build
 ```
 
-| Service    | URL                         |
-|------------|-----------------------------|
-| Web UI     | http://localhost:8080        |
-| Prometheus | http://localhost:9090        |
-| Grafana    | http://localhost:3000        |
+## 📍 Services
+
+| Service    | URL                                            |
+| ---------- | ---------------------------------------------- |
+| Web UI     | [http://localhost:8080](http://localhost:8080) |
+| Prometheus | [http://localhost:9090](http://localhost:9090) |
+| Grafana    | [http://localhost:3000](http://localhost:3000) |
 
 Grafana default credentials: `admin / admin`
 
 ## API
 
-| Method | Endpoint         | Description              |
-|--------|-----------------|--------------------------|
-| POST   | `/api/jobs`      | Create a URL fetch job   |
-| GET    | `/api/jobs`      | List jobs (filter by status) |
-| GET    | `/api/jobs/:id`  | Get job by ID            |
-| GET    | `/health`        | Health check             |
-| GET    | `/metrics`       | Prometheus metrics       |
-
-### Create job
+### Create a Job
 
 ```bash
 curl -X POST http://localhost:8080/api/jobs \
@@ -80,32 +107,85 @@ curl -X POST http://localhost:8080/api/jobs \
   -d '{"type":"URL_FETCH","payload":"{\"url\":\"https://nytimes.com\"}"}'
 ```
 
-## Configuration
+### Endpoints
 
-| Env var        | Default    | Description               |
-|----------------|------------|---------------------------|
-| SERVER_PORT    | 8080       | HTTP server port          |
-| DATABASE_URL   | —          | PostgreSQL connection URL |
-| REDIS_URL      | —          | Redis connection URL      |
-| WORKER_COUNT   | 5          | Number of worker goroutines |
-| MAX_RETRIES    | 3          | Max retry attempts per job |
+| Method | Endpoint        | Description                            |
+| ------ | --------------- | -------------------------------------- |
+| `POST` | `/api/jobs`     | Create a URL fetch job                 |
+| `GET`  | `/api/jobs`     | List jobs, optionally filter by status |
+| `GET`  | `/api/jobs/:id` | Get job details by ID                  |
+| `GET`  | `/health`       | Health check                           |
+| `GET`  | `/metrics`      | Prometheus metrics                     |
 
-## Project Structure
+## ⚙️ Configuration
+
+Environment variables:
+
+| Variable       | Default | Description                    |
+| -------------- | ------- | ------------------------------ |
+| `SERVER_PORT`  | `8080`  | HTTP server port               |
+| `DATABASE_URL` | —       | PostgreSQL connection URL      |
+| `REDIS_URL`    | —       | Redis connection URL           |
+| `WORKER_COUNT` | `5`     | Number of worker goroutines    |
+| `MAX_RETRIES`  | `3`     | Maximum retry attempts per job |
+
+## 🧱 Project Structure
+
+```text
 queueforge/
-├── cmd/server/        — entry point, wiring
+├── cmd/server/        # Application entry point and wiring
+├── config/            # Environment variable loading
 ├── internal/
-│   ├── api/           — Gin router, handlers, middleware
-│   ├── domain/        — Job entity, status enum, errors
-│   ├── repository/    — PostgreSQL queries
-│   ├── queue/         — Redis push/pop
-│   ├── worker/        — goroutine pool, processor, retry
-│   └── metrics/       — Prometheus counters and histograms
-├── config/            — env var loading
-├── static/            — web UI
-└── docker/            — init.sql, prometheus.yml
+│   ├── api/           # Gin router, handlers, middleware
+│   ├── domain/        # Job entity, status enum, errors
+│   ├── metrics/       # Prometheus counters and histograms
+│   ├── queue/         # Redis push/pop layer
+│   ├── repository/    # PostgreSQL queries
+│   └── worker/        # Worker pool, processor, retry logic
+├── static/            # Web UI
+├── docker/            # init.sql, prometheus.yml, Grafana config
+├── Dockerfile
+├── docker-compose.yml
+└── go.mod
+```
 
-## Known Limitations
+## 🧠 Engineering Decisions
 
-- Redis restart loses queued job IDs (jobs remain in DB as QUEUED)
-- Single-node worker — no horizontal scaling
-- Job type limited to URL_FETCH
+### Why PostgreSQL for job state?
+
+PostgreSQL provides durable state for job lifecycle tracking. Even if Redis loses queued entries, the system still preserves job records and final status in the database.
+
+### Why Redis for the queue?
+
+Redis gives fast enqueue/dequeue operations and keeps the worker pipeline simple and efficient.
+
+### Why a worker pool?
+
+A fixed worker pool gives predictable concurrency and makes throughput easy to control through `WORKER_COUNT`.
+
+### Why retries with backoff?
+
+Network requests are inherently unstable. Exponential backoff reduces pressure on transient failures and improves job completion reliability.
+
+### Why graceful shutdown?
+
+It prevents job loss during deploys or container restarts by letting in-flight work finish cleanly.
+
+## ⚠️ Known Limitations
+
+* Redis restarts can lose queued job IDs, while job records remain in PostgreSQL as `QUEUED`.
+* The system currently runs as a single worker node and does not support horizontal worker scaling.
+* Job type is currently limited to `URL_FETCH`.
+
+## 📈 Observability
+
+QueueForge exposes Prometheus metrics for:
+
+* total job counts
+* job processing duration
+* queue size
+
+A Grafana dashboard can be used to visualize system behavior over time.
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
