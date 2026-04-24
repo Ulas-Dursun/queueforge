@@ -1,0 +1,7 @@
+.git/
+.gitignore
+*.log
+.env
+docs/
+*.md
+.idea/
